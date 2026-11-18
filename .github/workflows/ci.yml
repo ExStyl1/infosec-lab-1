@@ -1,0 +1,105 @@
+name: REST API security CI
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  api-and-security:
+    name: API tests, Bandit and pip-audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install runtime and verification dependencies
+        run: |
+          python -m pip install --require-hashes -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+          python -m pip check
+          mkdir -p reports
+      - name: Run API tests
+        run: python -m unittest discover -s tests -v
+      - name: Verify HTTP API with curl
+        run: python -m scripts.http_smoke
+      - name: Bandit (SAST)
+        if: ${{ !cancelled() }}
+        run: |
+          status=0
+          bandit -r secure_api -f json -o reports/bandit.json || status=$?
+          python scripts/security_summary.py bandit reports/bandit.json | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: pip-audit (PyPI SCA)
+        if: ${{ !cancelled() }}
+        run: |
+          status=0
+          pip-audit -r requirements.txt --require-hashes -f json -o reports/pip-audit.json || status=$?
+          python scripts/security_summary.py pip-audit reports/pip-audit.json | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Upload Bandit and pip-audit reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-security-reports
+          path: reports/*.json
+          if-no-files-found: error
+          retention-days: 30
+
+  dependency-check:
+    name: OWASP Dependency-Check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    env:
+      ODC_VERSION: "13.0.0"
+      ODC_SHA256: 44d920d1ec03e948df862a253f0912782a31b9beee8a7c8895b9cb95760176ed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Restore cached NVD database
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/odc-data
+          key: ${{ runner.os }}-odc-${{ env.ODC_VERSION }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-odc-${{ env.ODC_VERSION }}-
+      - name: Download locked wheels and verify scanner checksum
+        run: |
+          mkdir -p reports "$RUNNER_TEMP/odc-data" "$RUNNER_TEMP/wheels"
+          python -m pip download --require-hashes --only-binary=:all: -r requirements.txt -d "$RUNNER_TEMP/wheels"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/dependency-check/DependencyCheck/releases/download/v$ODC_VERSION/dependency-check-$ODC_VERSION-release.zip" \
+            --output "$RUNNER_TEMP/odc.zip"
+          echo "$ODC_SHA256  $RUNNER_TEMP/odc.zip" | sha256sum --check
+          unzip -q "$RUNNER_TEMP/odc.zip" -d "$RUNNER_TEMP"
+      - name: Scan wheels with OWASP Dependency-Check
+        run: |
+          status=0
+          "$RUNNER_TEMP/dependency-check/bin/dependency-check.sh" \
+            --project "Infosec Lab 1" --scan "$RUNNER_TEMP/wheels" \
+            --data "$RUNNER_TEMP/odc-data" --out reports \
+            --format HTML --format JSON --enableExperimental \
+            --disableOssIndex --disableRetireJS --failOnCVSS 7 \
+            --nvdDatafeed 'https://dependency-check.github.io/DependencyCheck_Builder/nvd_cache/nvdcve-{0}.json.gz' || status=$?
+          python scripts/security_summary.py dependency-check reports/dependency-check-report.json | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Upload OWASP Dependency-Check reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: owasp-dependency-check-reports
+          path: reports/dependency-check-report.*
+          if-no-files-found: error
+          retention-days: 30
