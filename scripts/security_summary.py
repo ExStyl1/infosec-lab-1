@@ -28,7 +28,7 @@ def main():
             raise SystemExit("Incomplete dependency audit")
     else:
         dependencies = report["dependencies"]
-        wheels = sum(item["fileName"].endswith(".whl") for item in dependencies)
+        wheels = sum(item["filePath"].endswith(".whl") for item in dependencies)
         findings = sum(len(item.get("vulnerabilities", [])) for item in dependencies)
         print("### OWASP Dependency-Check (SCA)")
         print(f"- Wheel files analyzed: **{wheels}**")

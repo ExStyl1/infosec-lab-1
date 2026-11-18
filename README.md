@@ -59,4 +59,6 @@ python -m scripts.http_smoke
 
 Workflow запускается при `push` и `pull_request`. Он выполняет тесты, проверяет HTTP-ответы через curl, анализирует Python-код через Bandit, сверяет зафиксированные пакеты с PyPI через pip-audit и сканирует wheel-файлы через OWASP Dependency-Check. OWASP Dependency-Check использует зеркало NVD проекта, HTML- и JSON-отчёты сохраняются в артефактах. Порог блокировки OWASP Dependency-Check — CVSS 7. Для Bandit и pip-audit ненулевой код завершения также останавливает успешный проход CI.
 
+При первом анализе коллизия имён связала wheel PyJWT 2.15.1 с CVE-2025-45770. По записи OSV уязвимый компонент — PHP-проект `lcobucci/jwt`. В конфигурации исключена только эта пара пакета и CVE. Остальные совпадения проверяются в обычном режиме. [Запись OSV](https://osv.dev/vulnerability/CVE-2025-45770)
+
 [Запуски GitHub Actions](https://github.com/ExStyl1/infosec-lab-1/actions/workflows/ci.yml)

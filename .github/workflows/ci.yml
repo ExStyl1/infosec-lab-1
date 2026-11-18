@@ -92,6 +92,7 @@ jobs:
             --data "$RUNNER_TEMP/odc-data" --out reports \
             --format HTML --format JSON --enableExperimental \
             --disableOssIndex --disableRetireJs --failOnCVSS 7 \
+            --suppression .github/odc-suppressions.xml \
             --nvdDatafeed 'https://dependency-check.github.io/DependencyCheck_Builder/nvd_cache/nvdcve-{0}.json.gz' || status=$?
           if [[ -s reports/dependency-check-report.json ]]; then
             python scripts/security_summary.py dependency-check reports/dependency-check-report.json | tee -a "$GITHUB_STEP_SUMMARY"
