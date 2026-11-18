@@ -91,9 +91,14 @@ jobs:
             --project "Infosec Lab 1" --scan "$RUNNER_TEMP/wheels" \
             --data "$RUNNER_TEMP/odc-data" --out reports \
             --format HTML --format JSON --enableExperimental \
-            --disableOssIndex --disableRetireJS --failOnCVSS 7 \
+            --disableOssIndex --disableRetireJs --failOnCVSS 7 \
             --nvdDatafeed 'https://dependency-check.github.io/DependencyCheck_Builder/nvd_cache/nvdcve-{0}.json.gz' || status=$?
-          python scripts/security_summary.py dependency-check reports/dependency-check-report.json | tee -a "$GITHUB_STEP_SUMMARY"
+          if [[ -s reports/dependency-check-report.json ]]; then
+            python scripts/security_summary.py dependency-check reports/dependency-check-report.json | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::Dependency-Check did not generate a report."
+            exit 1
+          fi
           exit "$status"
       - name: Upload OWASP Dependency-Check reports
         if: ${{ !cancelled() }}
